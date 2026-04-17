@@ -58,8 +58,8 @@ Usuario (Telegram / WhatsApp)
 ## Inicio rápido
 
 ```bash
-git clone <este-repo>
-cd loyalty_agent
+git clone https://github.com/JuanHenao31/loyalty-agent.git
+cd loyalty-agent
 
 python -m venv .venv
 # Windows: .venv\Scripts\activate

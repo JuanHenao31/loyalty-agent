@@ -1,133 +1,141 @@
 # Techapoli Loyalty Agent
 
-Microservicio agéntico en Python que actúa como capa conversacional sobre el microservicio de loyalty de Techapoli. Permite a usuarios internos del negocio (dueños, administradores, staff) operar el programa de fidelización por chat desde **Telegram** y **WhatsApp**.
+Capa conversacional en **Python / FastAPI** sobre el API de loyalty: usuarios internos (dueño, admin, staff) operan el programa por **Telegram** y **WhatsApp**, con herramientas LangGraph contra el core vía HTTP y confirmación explícita en acciones sensibles.
 
----
+![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)
 
-## Cómo funciona
+## Índice
 
-1. El usuario manda un mensaje desde Telegram o WhatsApp.
-2. El webhook del agente valida la firma del canal y normaliza el mensaje.
-3. Se busca el binding `(canal, usuario)` → `internal_user` del loyalty.
-4. El agente LangGraph elige qué herramienta invocar, la ejecuta contra el loyalty core vía HTTP y construye la respuesta.
-5. Para acciones sensibles (crear cliente, sumar puntos, redimir, revocar tarjeta) el agente **propone primero y espera confirmación explícita** antes de ejecutar.
-6. La respuesta sale por el mismo canal de entrada.
+- [Arquitectura](#arquitectura)
+- [Requisitos](#requisitos)
+- [Inicio rápido](#inicio-rápido)
+- [Variables de entorno](#variables-de-entorno)
+- [Base de datos](#base-de-datos)
+- [Service account (loyalty)](#service-account-loyalty)
+- [Onboarding de canales](#onboarding-de-canales)
+- [Webhooks](#webhooks)
+- [Probar en desarrollo](#probar-en-desarrollo)
+- [Tests](#tests)
+- [Estructura del repo](#estructura-del-repo)
+- [Tools del agente](#tools-del-agente)
+- [Documentación](#documentación)
+- [Roadmap](#roadmap)
 
+## Arquitectura
+
+1. Mensaje entrante (Telegram / WhatsApp) → webhook valida firma / secreto.
+2. Se resuelve `channel_identity_binding` → usuario interno del loyalty.
+3. LangGraph ejecuta tools HTTP; acciones sensibles piden confirmación antes de aplicar.
+4. Respuesta por el mismo canal (Bot API / Graph API).
+
+```text
+Usuario (Telegram / WhatsApp)
+            │
+            ▼
+   [Webhook FastAPI] ──► 200 OK inmediato
+            │
+     BackgroundTask
+            ▼
+   ProcessInboundMessage
+     ├── binding → internal_user + JWT
+     ├── sesión + mensajes (Postgres)
+     └── LangGraph ReAct + tools
+            │
+            ▼
+   OutboundAdapter → Telegram / WhatsApp
 ```
-Usuario WhatsApp/Telegram
-        │
-        ▼
-[Webhook FastAPI]  ──valida firma──► 200 OK inmediato
-        │
-  BackgroundTask
-        │
-        ▼
-[ProcessInboundMessage]
-  ├── lookup channel_identity_binding
-  ├── get/create agent_session
-  ├── fetch user JWT (refresh_token cifrado)
-  └── LangGraph ReAct Agent
-        ├── tool: find_customer
-        ├── tool: get_customer_loyalty_status
-        ├── tool: add_points  ◄── interrupt_before (pide confirmación)
-        └── ...
-        │
-        ▼
-[OutboundAdapter]  ──► Telegram Bot API / WhatsApp Graph API
-```
 
----
+## Requisitos
 
-## Requisitos previos
+| Componente | Notas |
+|------------|--------|
+| **Python** | 3.11+ |
+| **PostgreSQL** | 12+ (base propia del agente) |
+| **Loyalty API** | Instancia del core (ej. `http://localhost:8000`) |
+| **OpenAI** | API key para el modelo configurado |
 
-| Herramienta | Versión mínima |
-|---|---|
-| Python | 3.11+ |
-| PostgreSQL | 12+ |
-| [loyalty core](../loyalty) | corriendo en `http://localhost:8000` |
-
----
-
-## Instalación
+## Inicio rápido
 
 ```bash
-# 1. Clonar / navegar al directorio
+git clone <este-repo>
 cd loyalty_agent
 
-# 2. Crear y activar entorno virtual
 python -m venv .venv
-source .venv/bin/activate        # Linux/macOS
-.venv\Scripts\activate           # Windows
+# Windows: .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
 
-# 3. Instalar dependencias
 pip install -r requirements.txt
-```
-
----
-
-## Configuración
-
-```bash
 cp .env.example .env
+# Edita .env (ver tabla siguiente + comentarios en .env.example)
+
+# Crear DB y migrar
+createdb loyalty_agent   # o CREATE DATABASE desde psql
+alembic upgrade head
+
+uvicorn main:app --host 0.0.0.0 --port 9000 --reload
 ```
 
-Edita `.env` con tus valores. Las variables obligatorias para el PMV son:
+Comprobar salud: `curl http://localhost:9000/health` → `{"status":"ok"}`  
+Swagger: [http://localhost:9000/docs](http://localhost:9000/docs)
 
-| Variable | Descripción |
-|---|---|
-| `OPENAI_API_KEY` | API key de OpenAI |
-| `OPENAI_MODEL` | Modelo a usar (default: `gpt-4o-mini`) |
-| `LOYALTY_API_BASE_URL` | URL base del loyalty core (ej. `http://localhost:8000`) |
-| `LOYALTY_AGENT_SERVICE_EMAIL` | Email del service account en el loyalty (rol `business_owner`) |
-| `LOYALTY_AGENT_SERVICE_PASSWORD` | Password del service account |
-| `AGENT_DATABASE_URL` | URL de la base Postgres del agente (ej. `postgresql+asyncpg://postgres:postgres@localhost:5432/loyalty_agent`) |
-| `REFRESH_TOKEN_ENCRYPTION_KEY` | Clave Fernet para cifrar refresh tokens (ver abajo) |
-| `TELEGRAM_BOT_TOKEN` | Token del bot de Telegram |
-| `TELEGRAM_WEBHOOK_SECRET` | Secret configurado al registrar el webhook en Telegram |
-| `WHATSAPP_VERIFY_TOKEN` | Token de verificación del webhook de Meta |
-| `WHATSAPP_ACCESS_TOKEN` | Token de acceso de WhatsApp Cloud API |
-| `WHATSAPP_PHONE_NUMBER_ID` | ID del número de WhatsApp en Meta |
-| `WHATSAPP_APP_SECRET` | App secret de Meta para validar firmas HMAC |
+## Variables de entorno
 
-### Generar la clave Fernet
+Valores de ejemplo y descripciones cortas están en [`.env.example`](./.env.example).
+
+### Núcleo (PMV)
+
+| Variable | Uso |
+|----------|-----|
+| `OPENAI_API_KEY` | Llamadas al modelo |
+| `OPENAI_MODEL` | Por defecto `gpt-4o-mini` |
+| `LOYALTY_API_BASE_URL` | URL base del loyalty |
+| `LOYALTY_AGENT_SERVICE_EMAIL` / `LOYALTY_AGENT_SERVICE_PASSWORD` | Service account (`business_owner`) para lecturas |
+| `AGENT_DATABASE_URL` | Postgres async (SQLAlchemy + asyncpg) |
+| `REFRESH_TOKEN_ENCRYPTION_KEY` | Fernet para cifrar refresh tokens en bindings |
+
+Generar Fernet:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Pega el resultado en `REFRESH_TOKEN_ENCRYPTION_KEY`.
+### Telegram
 
----
+| Variable | Uso |
+|----------|-----|
+| `TELEGRAM_BOT_TOKEN` | Envío de respuestas (`sendMessage`) |
+| `TELEGRAM_WEBHOOK_SECRET` | Opcional: si está definido, debe coincidir con `secret_token` en `setWebhook` y con la cabecera `X-Telegram-Bot-Api-Secret-Token` |
 
-## Base de datos del agente
+### WhatsApp (Cloud API)
 
-La base de datos del agente es **independiente** de la del loyalty core. Almacena sesiones conversacionales, mensajes, logs de tools, confirmaciones pendientes y auditoría.
+| Variable | Uso |
+|----------|-----|
+| `WHATSAPP_VERIFY_TOKEN` | Verificación GET del webhook |
+| `WHATSAPP_ACCESS_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` | Envío de mensajes |
+| `WHATSAPP_APP_SECRET` | Validación `X-Hub-Signature-256` |
+
+Para **solo Telegram** en local puedes dejar las variables de WhatsApp vacías; el servidor arranca igual.
+
+## Base de datos
+
+La base del **agente** es independiente del loyalty: sesiones, mensajes, auditoría, confirmaciones, bindings.
 
 ```bash
-# Crear la base (si no existe)
-createdb loyalty_agent   # o desde psql: CREATE DATABASE loyalty_agent;
-
-# Aplicar migraciones
 alembic upgrade head
 ```
 
----
+## Service account (loyalty)
 
-## Service account en el loyalty core
-
-El agente necesita un usuario interno en el loyalty para hacer llamadas de lectura. Créalo con la API del loyalty:
+El agente usa un usuario de servicio en el loyalty para operaciones de lectura. Creación típica (ajusta host, admin y `COMPANY_ID`):
 
 ```bash
-# 1. Login como platform_admin
-curl -X POST http://localhost:8000/api/v1/auth/login \
+curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email": "admin@techapoli.com", "password": "tu-password"}'
 
-# Guarda el access_token como ADMIN_TOKEN
-
-# 2. Crear el service account
-curl -X POST http://localhost:8000/api/v1/companies/{COMPANY_ID}/users \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
+curl -s -X POST "http://localhost:8000/api/v1/companies/COMPANY_ID/users" \
+  -H "Authorization: Bearer ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "full_name": "Loyalty Agent",
@@ -137,48 +145,26 @@ curl -X POST http://localhost:8000/api/v1/companies/{COMPANY_ID}/users \
   }'
 ```
 
-Luego pon ese email y password en `LOYALTY_AGENT_SERVICE_EMAIL` / `LOYALTY_AGENT_SERVICE_PASSWORD`.
+Esas credenciales van en `LOYALTY_AGENT_SERVICE_*`.
 
----
+## Onboarding de canales
 
-## Vincular usuarios de chat al loyalty (onboarding)
+Cada chat debe mapearse a un `internal_user` mediante la tabla `channel_identity_bindings` (inserción manual en el PMV; UI prevista en v2). Sin fila válida, el bot responde que el chat no está vinculado.
 
-Cada usuario interno que quiera usar el bot debe tener su identidad de chat vinculada a su `internal_user` del loyalty. Esto se hace una sola vez insertando directamente en `channel_identity_bindings` (flujo de UI de onboarding pendiente en v2):
+Pseudoflujo: login del usuario en loyalty → cifrar `refresh_token` con `encrypt_token` → insertar fila con `channel`, `channel_user_id` (teléfono o `chat.id` de Telegram), `company_id`, `internal_user_id`, rol, etc.
 
-```python
-from app.core.security import encrypt_token
-# Obtener el refresh_token del loyalty haciendo login con las credenciales del usuario
-# Luego insertar en la tabla:
-# channel="telegram", channel_user_id="<chat_id>", company_id=..., internal_user_id=...,
-# internal_user_email=..., internal_user_role="staff",
-# encrypted_refresh_token=encrypt_token("<refresh_token_del_loyalty>")
-```
+## Webhooks
 
----
+Los endpoints viven bajo el mismo host que la app (por defecto puerto **9000**).
 
-## Levantar el servidor
+| Canal | Método | Ruta |
+|-------|--------|------|
+| Telegram | `POST` | `/webhooks/telegram` |
+| WhatsApp | `GET` + `POST` | `/webhooks/whatsapp` |
 
-```bash
-# Desarrollo (con hot reload)
-python main.py
+**HTTPS público:** Telegram y Meta requieren URL accesible; en local suele usarse [ngrok](https://ngrok.com) (`ngrok http 9000`).
 
-# O directamente con uvicorn
-uvicorn main:app --host 0.0.0.0 --port 9000 --reload
-```
-
-El servidor queda disponible en `http://localhost:9000`.
-
-**Health check:**
-```bash
-curl http://localhost:9000/health
-# {"status": "ok"}
-```
-
----
-
-## Registrar webhooks
-
-### Telegram
+### Telegram — `setWebhook`
 
 ```bash
 curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
@@ -186,86 +172,43 @@ curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
   -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}"
 ```
 
-### WhatsApp
+> Un mismo bot solo puede tener **un** webhook activo. Si otro sistema (p. ej. n8n) ya registró el bot, hay que decidir qué URL queda en Telegram.
 
-En el panel de Meta for Developers → tu app → WhatsApp → Configuración:
-- **Callback URL**: `https://TU-DOMINIO/webhooks/whatsapp`
-- **Verify Token**: el valor de `WHATSAPP_VERIFY_TOKEN`
-- Suscribirse al campo `messages`
+### WhatsApp — Meta
 
-> Para pruebas locales usá [ngrok](https://ngrok.com): `ngrok http 9000` y registrá la URL pública.
+En Meta for Developers → WhatsApp → Configuración:
 
----
+- **Callback URL:** `https://TU-DOMINIO/webhooks/whatsapp`
+- **Verify token:** valor de `WHATSAPP_VERIFY_TOKEN`
+- Suscripción al campo `messages`
 
-## Probar la app
+## Probar en desarrollo
 
-### Opción 1 — FastAPI `/docs` (Swagger UI)
+### Chat por consola (sin Telegram/WhatsApp)
 
-Levantá el server y abrí `http://localhost:9000/docs`.  
-Verás los endpoints disponibles: `/health`, `/webhooks/telegram`, `/webhooks/whatsapp`.  
-Útil para probar el health check o simular un payload de webhook manualmente.
-
-### Opción 2 — Chat interactivo por consola (recomendado en dev)
-
-Habla con el agente directamente desde la terminal, sin necesitar Telegram ni WhatsApp.  
-Usa `MemorySaver` (sin Postgres) y el loyalty core real si está corriendo.
+Útil con el loyalty corriendo y variables en `.env`:
 
 ```bash
-# Instalar dependencia extra del script
-pip install python-dotenv
+pip install python-dotenv   # si no está ya en tu entorno
 
-# Levantar el loyalty core primero (en otra terminal)
-# cd ../loyalty && uvicorn main:app --port 8000
-
-# Correr el chat
-python scripts/dev_chat.py
-
-# Con parámetros explícitos
 python scripts/dev_chat.py \
-  --company-id <UUID-de-tu-empresa> \
+  --company-id <UUID-empresa> \
   --role business_owner \
-  --name "Juan David"
+  --name "Tu nombre"
 ```
 
-**Comandos disponibles en el chat:**
+| Comando | Efecto |
+|---------|--------|
+| `/reset` | Nueva conversación |
+| `/tools` | Lista tools (lectura / sensible) |
+| `/confirm` | Confirma la última propuesta |
+| `/exit` | Sale |
 
-| Comando | Qué hace |
-|---|---|
-| `/reset` | Borra el contexto y empieza una conversación nueva |
-| `/tools` | Lista todas las tools con su tipo (lectura / sensible) |
-| `/confirm` | Atajo para responder "sí, confirmo" a una propuesta del agente |
-| `/exit` | Salir |
+### Simular webhook Telegram (`curl`)
 
-**Ejemplo de sesión:**
-
-```
-Tú: ¿cuántos puntos tiene Laura?
-  [tool → find_customer] args: {'query': 'Laura'}
-  [tool result] [{"id": "...", "first_name": "Laura", ...}]
-  [tool → get_customer_loyalty_status] args: {'customer_id': '...'}
-  [tool result] {"has_card": true, "current_points_balance": 12, ...}
-
-Agente: Laura tiene 12 puntos en su tarjeta activa, con vencimiento el 17/04/2027.
-
-Tú: súmale 5 puntos por corte
-  [tool ⚠️ add_points] args: {'customer_id': '...', 'points': 5, 'reason': 'corte'}
-
-Agente: Voy a sumarle 5 puntos a Laura por "corte". ¿Confirmas?
-
-Tú: /confirm
-Agente: Listo. Laura ahora tiene 17 puntos.
-```
-
-> **Nota:** Las variables de entorno del `.env` se cargan automáticamente.  
-> Si el loyalty core no está corriendo, las tools de lectura fallarán con un error de conexión pero el agente seguirá respondiendo.
-
-### Opción 3 — `curl` para webhooks
+Si `TELEGRAM_WEBHOOK_SECRET` está vacío, no hace falta la cabecera.
 
 ```bash
-# Health check
-curl http://localhost:9000/health
-
-# Simular un mensaje de Telegram (sin validación de firma en dev)
 curl -X POST http://localhost:9000/webhooks/telegram \
   -H "Content-Type: application/json" \
   -H "X-Telegram-Bot-Api-Secret-Token: ${TELEGRAM_WEBHOOK_SECRET}" \
@@ -277,118 +220,66 @@ curl -X POST http://localhost:9000/webhooks/telegram \
       "text": "¿cuántos puntos tiene Laura?"
     }
   }'
-# Responde 200 inmediatamente; el agente procesa en background
 ```
 
-### Opción 4 — ngrok para canales reales
-
-```bash
-# En una terminal: levantar el agente
-uvicorn main:app --port 9000
-
-# En otra: exponer con ngrok
-ngrok http 9000
-
-# Registrar la URL en Telegram
-curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
-  -d "url=https://XXXX.ngrok.io/webhooks/telegram" \
-  -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}"
-```
-
----
+La API responde al instante; el procesamiento sigue en background.
 
 ## Tests
 
 ```bash
-# Solo unitarios (sin Postgres ni loyalty core)
 pytest tests/unit -q
-
-# Con cobertura
 pytest tests/unit --cov=app --cov-report=term-missing
 ```
 
-Los tests unitarios cubren:
-- Idempotency key derivation (determinista y sensible a entradas)
-- Cifrado/descifrado Fernet de refresh tokens
-- Auth manager: login, cache, expiración y refresh por usuario
-- HTTP client: inyección de `Authorization` + `Idempotency-Key`, mapeo de errores
-- Guardrails RBAC por rol
+Cubren utilidades de idempotencia, Fernet, auth manager, cliente HTTP, guardrails RBAC, etc.
 
----
+## Estructura del repo
 
-## Estructura del proyecto
+<details>
+<summary><strong>Árbol principal</strong> (clic para expandir)</summary>
 
-```
+```text
 loyalty_agent/
-├── main.py                          # FastAPI app + lifespan (agent runtime)
-├── alembic/                         # Migraciones Postgres del agente
-│   └── versions/001_initial.py
+├── main.py                 # FastAPI + lifespan
+├── alembic/                # Migraciones Postgres
 ├── app/
-│   ├── core/                        # Config (Pydantic Settings), logging, Fernet, DB engine
-│   ├── domain/
-│   │   ├── entities/loyalty.py      # DTOs que espejean la API del loyalty core
-│   │   └── ports/                   # Interfaces abstractas (LoyaltyServicePort, etc.)
-│   ├── application/
-│   │   ├── dto/inbound.py           # InboundMessageCommand (canal-agnóstico)
-│   │   ├── policies/guardrails.py   # Detección off-topic, RBAC pre-checks
-│   │   └── use_cases/
-│   │       └── process_inbound_message.py  # Orquestación principal
-│   ├── agent/
-│   │   ├── runtime.py               # create_react_agent + PostgresSaver
-│   │   ├── guardrails.py            # SENSITIVE_TOOLS, tool_allowed_for_role
-│   │   ├── prompts/system.py        # System prompt + política del programa
-│   │   └── tools/                   # 10 tools (una por archivo)
-│   ├── infrastructure/
-│   │   ├── loyalty_api/
-│   │   │   ├── auth_manager.py      # Service account + refresh por usuario
-│   │   │   └── http_client.py       # HttpLoyaltyServiceAdapter (httpx)
-│   │   ├── messaging/               # TelegramOutboundAdapter, WhatsAppOutboundAdapter
-│   │   ├── persistence/models/      # 9 modelos SQLAlchemy
-│   │   └── audit/postgres_audit.py
-│   ├── entrypoints/
-│   │   ├── http/health.py
-│   │   └── webhooks/
-│   │       ├── telegram.py          # POST /webhooks/telegram
-│   │       └── whatsapp.py          # GET + POST /webhooks/whatsapp
+│   ├── core/               # Settings, DB, logging, seguridad
+│   ├── domain/             # Entidades + puertos
+│   ├── application/        # DTOs, políticas, casos de uso
+│   ├── agent/              # LangGraph, prompts, tools
+│   ├── infrastructure/     # HTTP loyalty, mensajería, modelos SQLAlchemy, auditoría
+│   ├── entrypoints/        # health + webhooks
 │   └── shared/
-│       ├── exceptions.py
-│       └── ids.py                   # derive_idempotency_key
-└── tests/
-    └── unit/                        # 18 tests, sin dependencias externas
+├── scripts/dev_chat.py
+└── tests/unit/
 ```
 
----
+</details>
 
-## Tools disponibles
+## Tools del agente
 
 | Tool | Tipo | Descripción |
-|---|---|---|
-| `find_customer` | Lectura | Busca clientes por nombre/email/teléfono |
-| `get_customer_loyalty_status` | Lectura | Saldo de puntos y estado de tarjeta |
-| `get_customer_rewards` | Lectura | Recompensas activas, marcadas como alcanzables o no |
-| `get_customer_history` | Lectura | Últimos movimientos de earn/redeem |
-| `get_company_analytics` | Lectura | Métricas del programa (clientes, puntos, redenciones) |
-| `explain_loyalty_policy` | Lectura | Política del programa (expiración, canje, tarjetas) |
-| `create_customer_with_card` | **Sensible** | Crea cliente + inscribe tarjeta (pide confirmación) |
-| `add_points` | **Sensible** | Suma puntos a la tarjeta activa (pide confirmación) |
-| `redeem_reward` | **Sensible** | Canjea una recompensa (pide confirmación) |
-| `revoke_card` | **Sensible** | Revoca tarjeta — solo `business_owner`+ (pide confirmación) |
+|------|------|-------------|
+| `find_customer` | Lectura | Búsqueda por nombre / email / teléfono |
+| `get_customer_loyalty_status` | Lectura | Puntos y estado de tarjeta |
+| `get_customer_rewards` | Lectura | Recompensas y elegibilidad |
+| `get_customer_history` | Lectura | Movimientos recientes |
+| `get_company_analytics` | Lectura | Métricas del programa |
+| `explain_loyalty_policy` | Lectura | Política del programa |
+| `create_customer_with_card` | Sensible | Alta + tarjeta (confirmación) |
+| `add_points` | Sensible | Suma puntos (confirmación) |
+| `redeem_reward` | Sensible | Canje (confirmación) |
+| `revoke_card` | Sensible | Revoca tarjeta — owner+ (confirmación) |
 
----
+## Documentación
 
-## Variables de entorno completas
+Especificación ampliada del PMV: [`techapoli_loyalty_agent_pmv.md`](./techapoli_loyalty_agent_pmv.md).
 
-Ver `.env.example` para la lista completa con descripciones.
+## Roadmap
 
----
-
-## Roadmap v2
-
-- Flujo de onboarding conversacional (vincular chat identity desde el propio chat)
-- Web UI con streaming SSE
-- Resúmenes automáticos de conversaciones largas
+- Onboarding conversacional (vincular identidad desde el chat)
+- Web UI con streaming (SSE)
+- Resúmenes de conversación larga
 - Memoria semántica / RAG
 - Multiagente
 - Canales de voz
-#   l o y a l t y - a g e n t  
- 

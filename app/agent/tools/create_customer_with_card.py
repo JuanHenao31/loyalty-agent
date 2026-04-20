@@ -6,7 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from pydantic import BaseModel, EmailStr, Field
 
-from app.agent.tools._context import get_turn_context
+from app.agent.guardrails import require_tool_access
 from app.shared.ids import derive_idempotency_key
 
 
@@ -29,7 +29,7 @@ async def create_customer_with_card(
 ) -> dict:
     """ACCIÓN SENSIBLE. Crea un cliente nuevo en la empresa actual e inscribe una tarjeta de lealtad.
     Debe pedirse confirmación al usuario antes de ejecutarla."""
-    ctx = get_turn_context(config)
+    ctx = require_tool_access("create_customer_with_card", config)
     idem = derive_idempotency_key(
         "create_customer_with_card",
         ctx.idempotency_seed,

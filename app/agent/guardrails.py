@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+from app.core.branding import GUARDRAIL_RBAC_DENIED
+from app.shared.exceptions import GuardrailViolation
+
+if TYPE_CHECKING:
+    from app.agent.tools._context import AgentTurnContext
 
 Role = Literal["platform_admin", "business_owner", "staff"]
 
@@ -24,6 +30,27 @@ def tool_allowed_for_role(tool_name: str, role: Role) -> bool:
     if tool_name in BUSINESS_OWNER_TOOLS and role == "staff":
         return False
     return True
+
+
+def _normalize_role(role: str) -> Role:
+    if role in ("platform_admin", "business_owner", "staff"):
+        return role  # type: ignore[return-value]
+    return "staff"
+
+
+def require_tool_access(tool_name: str, config: dict | None) -> "AgentTurnContext":
+    """Resolve turn context and enforce RBAC before any loyalty tool runs."""
+    from app.agent.tools._context import get_turn_context
+
+    ctx = get_turn_context(config)
+    eff_role = _normalize_role(ctx.role)
+    if not tool_allowed_for_role(tool_name, eff_role):
+        raise GuardrailViolation(
+            f"tool {tool_name} denied for role {eff_role}",
+            user_message=GUARDRAIL_RBAC_DENIED,
+            audit_metadata={"tool": tool_name, "role": eff_role},
+        )
+    return ctx
 
 
 OFFTOPIC_HINTS = (

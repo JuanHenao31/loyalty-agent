@@ -6,7 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from app.agent.tools._context import get_turn_context
+from app.agent.guardrails import require_tool_access
 
 
 class FindCustomerArgs(BaseModel):
@@ -19,7 +19,7 @@ async def find_customer(query: str, config: Annotated[RunnableConfig, ""]) -> li
 
     Devuelve una lista de hasta 10 coincidencias con id, nombre, email, teléfono y status.
     """
-    ctx = get_turn_context(config)
+    ctx = require_tool_access("find_customer", config)
     customers = await ctx.loyalty.list_customers(ctx.company_id, search=query)
     return [
         {

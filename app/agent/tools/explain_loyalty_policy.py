@@ -6,6 +6,8 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
+from app.agent.guardrails import require_tool_access
+
 
 class ExplainLoyaltyPolicyArgs(BaseModel):
     topic: str = Field(
@@ -18,6 +20,7 @@ async def explain_loyalty_policy(
     topic: str, config: Annotated[RunnableConfig, ""]
 ) -> str:
     """Devuelve la explicación estática del tema de política solicitado."""
+    require_tool_access("explain_loyalty_policy", config)
     topic = topic.lower().strip()
     answers = {
         "expiracion": "Los puntos expiran después del número de meses configurado por la empresa (`points_expiration_months`). Cada vez que se suman puntos, la fecha de expiración se reinicia hacia adelante.",

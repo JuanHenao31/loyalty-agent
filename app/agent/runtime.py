@@ -12,6 +12,9 @@ for explicit confirmation before calling any sensitive tool. The user's next
 This is simpler than graph-level interrupt_before (which only supports node
 names like "tools", not individual tool names) and works naturally over
 WhatsApp/Telegram where each message is a separate HTTP call.
+
+Each tool entrypoint calls `require_tool_access` so disallowed roles cannot
+execute owner-only tools even if the model requests them.
 """
 
 from __future__ import annotations

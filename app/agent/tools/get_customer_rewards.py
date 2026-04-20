@@ -7,7 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from app.agent.tools._context import get_turn_context
+from app.agent.guardrails import require_tool_access
 
 
 class GetCustomerRewardsArgs(BaseModel):
@@ -23,7 +23,7 @@ async def get_customer_rewards(
     customer_id: UUID | None = None,
 ) -> list[dict]:
     """Lista las recompensas activas de la empresa. Si se pasa customer_id, marca cuáles puede redimir con su saldo actual."""
-    ctx = get_turn_context(config)
+    ctx = require_tool_access("get_customer_rewards", config)
     rewards = await ctx.loyalty.list_rewards(ctx.company_id, status="active")
     balance = None
     if customer_id is not None:

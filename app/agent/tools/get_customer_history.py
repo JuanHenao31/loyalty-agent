@@ -7,7 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from app.agent.tools._context import get_turn_context
+from app.agent.guardrails import require_tool_access
 
 
 class GetCustomerHistoryArgs(BaseModel):
@@ -23,7 +23,7 @@ async def get_customer_history(
 
     Si el cliente no tiene tarjeta activa, devuelve lista vacía.
     """
-    ctx = get_turn_context(config)
+    ctx = require_tool_access("get_customer_history", config)
     cards = await ctx.loyalty.list_cards(ctx.company_id, customer_id=customer_id)
     active = next((c for c in cards if c.status == "active"), None)
     if not active:

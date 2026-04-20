@@ -7,7 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from app.agent.tools._context import get_turn_context
+from app.agent.guardrails import require_tool_access
 from app.shared.exceptions import LoyaltyApiError
 from app.shared.ids import derive_idempotency_key
 
@@ -26,7 +26,7 @@ async def add_points(
     config: Annotated[RunnableConfig, ""],
 ) -> dict:
     """ACCIÓN SENSIBLE. Suma puntos a la tarjeta activa del cliente. Requiere confirmación humana previa."""
-    ctx = get_turn_context(config)
+    ctx = require_tool_access("add_points", config)
     cards = await ctx.loyalty.list_cards(ctx.company_id, customer_id=customer_id)
     active = next((c for c in cards if c.status == "active"), None)
     if not active:

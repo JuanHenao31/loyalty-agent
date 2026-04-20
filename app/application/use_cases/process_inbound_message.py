@@ -5,11 +5,14 @@ Flow:
    If missing → reply with onboarding instructions and stop.
 2. Load or create the session for that (channel, channel_user_id) pair.
 3. Persist the inbound message.
-4. Fetch a fresh user access_token via the auth manager.
-5. Build an AgentTurnContext and invoke the agent graph with a thread_id
-   derived from the session_id (so the PostgresSaver checkpointer wires
-   human-in-the-loop interrupts correctly).
-6. Extract the assistant's final text and send it through the outbound adapter.
+4. If the text looks off-topic (cheap heuristic), record a guardrail event,
+    reply with a scope reminder, and skip the LLM.
+5. Fetch a fresh user access_token via the auth manager.
+6. Build an AgentTurnContext and invoke the agent graph with a thread_id
+    derived from the session_id (so the PostgresSaver checkpointer wires
+    human-in-the-loop interrupts correctly). Tools enforce RBAC per role;
+    a denial ends the turn with a guardrail audit row and a fixed user message.
+7. Extract the assistant's final text and send it through the outbound adapter.
 
 This use case does NOT handle confirmation resumption yet — that lives in a
 sibling use case (ConfirmAction) that re-runs the same thread after the user
@@ -29,7 +32,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.runtime import AgentRuntime, render_system_prompt
 from app.agent.tools._context import AgentTurnContext
 from app.application.dto.inbound import InboundMessageCommand
-from app.core.branding import ONBOARDING_MESSAGE
+from app.application.policies.guardrails import looks_off_topic
+from app.core.branding import GUARDRAIL_OFF_TOPIC_MESSAGE, ONBOARDING_MESSAGE
 from app.core.config import settings
 from app.core.security import decrypt_token
 from app.domain.ports.loyalty_service import LoyaltyServicePort
@@ -41,8 +45,10 @@ from app.infrastructure.persistence.models import (
     AgentSession,
     ChannelIdentityBinding,
 )
+from app.shared.exceptions import GuardrailViolation
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class ProcessInboundMessage:
@@ -77,6 +83,16 @@ class ProcessInboundMessage:
             metadata={"channel": cmd.channel, "message_id": cmd.channel_message_id},
         )
 
+        if looks_off_topic(cmd.text):
+            await audit.record_guardrail(
+                session_id=agent_session.id,
+                event_type="off_topic",
+                message="Inbound text matched off-topic heuristics; agent not invoked.",
+                metadata={"channel": cmd.channel},
+            )
+            await self._reply_and_touch_session(agent_session, cmd, GUARDRAIL_OFF_TOPIC_MESSAGE)
+            return
+
         user_token = await self._resolve_user_token(binding)
 
         turn_ctx = AgentTurnContext(
@@ -108,9 +124,24 @@ class ProcessInboundMessage:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": cmd.text},
         ]
-        result = await self.runtime.graph.ainvoke({"messages": messages}, config)
+        try:
+            result = await self.runtime.graph.ainvoke({"messages": messages}, config)
+        except GuardrailViolation as exc:
+            await audit.record_guardrail(
+                session_id=agent_session.id,
+                event_type="tool_rbac_denied",
+                message=str(exc),
+                metadata=exc.audit_metadata,
+            )
+            await self._reply_and_touch_session(agent_session, cmd, exc.user_message)
+            return
 
         reply_text = self._extract_final_text(result)
+        await self._reply_and_touch_session(agent_session, cmd, reply_text)
+
+    async def _reply_and_touch_session(
+        self, agent_session: AgentSession, cmd: InboundMessageCommand, reply_text: str
+    ) -> None:
         self.session.add(
             AgentMessage(
                 session_id=agent_session.id,
@@ -119,7 +150,6 @@ class ProcessInboundMessage:
             )
         )
         agent_session.last_activity_at = datetime.now(timezone.utc)
-
         await self.outbound.send_text(cmd.channel_user_id, reply_text)
 
     # --- helpers ---

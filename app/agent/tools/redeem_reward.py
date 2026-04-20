@@ -7,7 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from app.agent.tools._context import get_turn_context
+from app.agent.guardrails import require_tool_access
 from app.shared.exceptions import LoyaltyApiError
 from app.shared.ids import derive_idempotency_key
 
@@ -27,7 +27,7 @@ async def redeem_reward(
 ) -> dict:
     """ACCIÓN SENSIBLE. Canjea una recompensa del cliente, deduciendo los puntos necesarios.
     Requiere confirmación humana previa."""
-    ctx = get_turn_context(config)
+    ctx = require_tool_access("redeem_reward", config)
     cards = await ctx.loyalty.list_cards(ctx.company_id, customer_id=customer_id)
     active = next((c for c in cards if c.status == "active"), None)
     if not active:

@@ -30,3 +30,13 @@ USER_PROCESSING_ERROR = (
     "No pude procesar tu mensaje bien. Intenta de nuevo en unos segundos; si se "
     "repite, avisa a tu administrador."
 )
+
+GUARDRAIL_OFF_TOPIC_MESSAGE = (
+    f"Soy {AGENT_NAME} y solo puedo ayudarte con el programa de fidelización de Techapoli. "
+    "Si necesitas consultar clientes, puntos o recompensas, dime en qué te puedo apoyar."
+)
+
+GUARDRAIL_RBAC_DENIED = (
+    "No tienes permisos para esa acción en el programa de fidelización. "
+    "Pide a un administrador o dueño del negocio que la ejecute por ti."
+)

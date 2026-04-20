@@ -7,7 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from app.agent.tools._context import get_turn_context
+from app.agent.guardrails import require_tool_access
 from app.shared.exceptions import RoleForbiddenError
 
 
@@ -19,7 +19,7 @@ class RevokeCardArgs(BaseModel):
 async def revoke_card(card_id: UUID, config: Annotated[RunnableConfig, ""]) -> dict:
     """ACCIÓN SENSIBLE. Revoca la tarjeta del cliente (queda inutilizable).
     Solo `business_owner` o `platform_admin` pueden ejecutar esta acción."""
-    ctx = get_turn_context(config)
+    ctx = require_tool_access("revoke_card", config)
     if ctx.role == "staff":
         raise RoleForbiddenError(
             "Tu rol (staff) no permite revocar tarjetas. Pide a un business_owner que lo haga."

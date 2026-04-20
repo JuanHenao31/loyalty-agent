@@ -33,3 +33,14 @@ class ConfirmationExpiredError(LoyaltyAgentError):
 
 class GuardrailViolation(LoyaltyAgentError):
     """A guardrail blocked the agent from proceeding."""
+
+    def __init__(
+        self,
+        log_message: str,
+        *,
+        user_message: str | None = None,
+        audit_metadata: dict | None = None,
+    ) -> None:
+        super().__init__(log_message)
+        self.user_message = user_message or log_message
+        self.audit_metadata = audit_metadata or {}

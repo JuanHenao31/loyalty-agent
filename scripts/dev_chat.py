@@ -37,7 +37,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 def _parse_args():
-    p = argparse.ArgumentParser(description="Dev chat para el Loyalty Agent")
+    p = argparse.ArgumentParser(description="Dev chat para Apoli (Techapoli Loyalty)")
     p.add_argument(
         "--company-id",
         default=os.getenv("DEV_COMPANY_ID", str(uuid.uuid4())),
@@ -72,7 +72,7 @@ async def main():
     from langgraph.prebuilt import create_react_agent
 
     from app.agent.guardrails import SENSITIVE_TOOLS
-    from app.agent.prompts.system import POLICY_KNOWLEDGE, SYSTEM_PROMPT
+    from app.agent.runtime import render_system_prompt
     from app.agent.tools import ALL_TOOLS
     from app.agent.tools._context import AgentTurnContext
     from app.core.config import settings
@@ -87,7 +87,7 @@ async def main():
     session_id = uuid.uuid4()
 
     print(f"\n{'='*60}")
-    print("  Techapoli Loyalty Agent — Dev Chat")
+    print("  Apoli — Dev Chat (Techapoli Loyalty)")
     print(f"{'='*60}")
     print(f"  Loyalty URL : {settings.loyalty_api_base_url}")
     print(f"  Modelo      : {settings.openai_model}")
@@ -120,15 +120,11 @@ async def main():
         checkpointer=checkpointer,
     )
 
-    system_prompt = (
-        SYSTEM_PROMPT.format(
-            company_id=str(company_id),
-            internal_user_id=str(user_id),
-            role=args.role,
-            user_display_name=args.name,
-        )
-        + "\n\n"
-        + POLICY_KNOWLEDGE
+    system_prompt = render_system_prompt(
+        company_id=str(company_id),
+        internal_user_id=str(user_id),
+        role=args.role,
+        user_display_name=args.name,
     )
 
     thread_id = str(session_id)

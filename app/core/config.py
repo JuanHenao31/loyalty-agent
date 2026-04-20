@@ -11,7 +11,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Techapoli Loyalty Agent"
+    app_name: str = "Apoli · Techapoli Loyalty"
     debug: bool = False
     api_host: str = "0.0.0.0"
     api_port: int = 9000

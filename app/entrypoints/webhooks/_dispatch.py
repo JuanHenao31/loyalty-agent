@@ -13,6 +13,7 @@ from fastapi import Request
 
 from app.application.dto.inbound import InboundMessageCommand
 from app.application.use_cases.process_inbound_message import ProcessInboundMessage
+from app.core.branding import USER_PROCESSING_ERROR
 from app.core.database import AsyncSessionLocal
 from app.infrastructure.loyalty_api.http_client import HttpLoyaltyServiceAdapter
 from app.infrastructure.messaging.telegram_adapter import TelegramOutboundAdapter
@@ -53,9 +54,6 @@ async def run_agent_turn(request: Request, cmd: InboundMessageCommand) -> None:
     except Exception:
         logger.exception("agent turn failed for channel=%s user=%s", cmd.channel, cmd.channel_user_id)
         try:
-            await outbound.send_text(
-                cmd.channel_user_id,
-                "Ocurrió un error procesando tu mensaje. Intenta de nuevo en unos segundos.",
-            )
+            await outbound.send_text(cmd.channel_user_id, USER_PROCESSING_ERROR)
         except Exception:
             logger.exception("failed to notify user of error")

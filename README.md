@@ -1,6 +1,6 @@
-# Techapoli Loyalty Agent
+# Apoli · Techapoli Loyalty
 
-Capa conversacional en **Python / FastAPI** sobre el API de loyalty: usuarios internos (dueño, admin, staff) operan el programa por **Telegram** y **WhatsApp**, con herramientas LangGraph contra el core vía HTTP y confirmación explícita en acciones sensibles.
+**Apoli** es el asistente de fidelización de Techapoli: capa conversacional en **Python / FastAPI** sobre el API de loyalty. Usuarios internos (dueño, admin, staff) operan el programa por **Telegram** y **WhatsApp**, con LangGraph contra el core vía HTTP y confirmación explícita en acciones sensibles.
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)
@@ -274,6 +274,10 @@ loyalty_agent/
 ## Documentación
 
 Especificación ampliada del PMV: [`techapoli_loyalty_agent_pmv.md`](./techapoli_loyalty_agent_pmv.md).
+
+### Identidad del asistente
+
+El nombre público es **Apoli** (asistente de fidelización Techapoli). Nombre, mensajes fijos de onboarding/errores y título por defecto de la API viven en `app/core/branding.py`; el tono y reglas conversacionales del modelo están en `app/agent/prompts/system.py`.
 
 ## Roadmap
 

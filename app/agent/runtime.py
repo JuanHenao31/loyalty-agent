@@ -24,7 +24,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.prebuilt import create_react_agent
 
-from app.agent.prompts.system import POLICY_KNOWLEDGE, SYSTEM_PROMPT
+from app.agent.prompts.system import POLICY_KNOWLEDGE, format_system_prompt_core
 from app.agent.tools import ALL_TOOLS
 from app.core.config import settings
 
@@ -44,12 +44,16 @@ def _build_llm() -> ChatOpenAI:
 def render_system_prompt(
     *, company_id: str, internal_user_id: str, role: str, user_display_name: str
 ) -> str:
-    return SYSTEM_PROMPT.format(
-        company_id=company_id,
-        internal_user_id=internal_user_id,
-        role=role,
-        user_display_name=user_display_name or "(sin nombre)",
-    ) + "\n\n" + POLICY_KNOWLEDGE
+    return (
+        format_system_prompt_core(
+            company_id=company_id,
+            internal_user_id=internal_user_id,
+            role=role,
+            user_display_name=user_display_name or "(sin nombre)",
+        )
+        + "\n\n"
+        + POLICY_KNOWLEDGE
+    )
 
 
 @asynccontextmanager

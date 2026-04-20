@@ -26,10 +26,10 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.prompts.system import POLICY_KNOWLEDGE, SYSTEM_PROMPT
 from app.agent.runtime import AgentRuntime, render_system_prompt
 from app.agent.tools._context import AgentTurnContext
 from app.application.dto.inbound import InboundMessageCommand
+from app.core.branding import ONBOARDING_MESSAGE
 from app.core.config import settings
 from app.core.security import decrypt_token
 from app.domain.ports.loyalty_service import LoyaltyServicePort
@@ -43,13 +43,6 @@ from app.infrastructure.persistence.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-ONBOARDING_MESSAGE = (
-    "Hola. Este chat aún no está vinculado a un usuario de Techapoli Loyalty. "
-    "Un administrador debe registrar tu número/usuario antes de que pueda ayudarte. "
-    "Contacta al dueño del negocio para completar el registro."
-)
-
 
 @dataclass
 class ProcessInboundMessage:

@@ -1,6 +1,6 @@
-# Apoli · Techapoli Loyalty
+# Lumi — Asistente inteligente de fidelización
 
-**Apoli** es el asistente de fidelización de Techapoli: capa conversacional en **Python / FastAPI** sobre el API de loyalty. Usuarios internos (dueño, admin, staff) operan el programa por **Telegram** y **WhatsApp**, con LangGraph contra el core vía HTTP y confirmación explícita en acciones sensibles.
+**Lumi** es el asistente inteligente de Techapoli que gestiona el programa de fidelización en tiempo real. Este repositorio contiene la capa conversacional en **Python / FastAPI** sobre el API de loyalty: dueños, administradores y staff operan por **Telegram** y **WhatsApp**, con LangGraph contra el core vía HTTP y confirmación explícita en acciones sensibles.
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)
@@ -275,9 +275,14 @@ loyalty_agent/
 
 Especificación ampliada del PMV: [`techapoli_loyalty_agent_pmv.md`](./techapoli_loyalty_agent_pmv.md).
 
-### Identidad del asistente
+### Identidad del asistente (**Lumi**)
 
-El nombre público es **Apoli** (asistente de fidelización Techapoli). Nombre, mensajes fijos de onboarding/errores y título por defecto de la API viven en `app/core/branding.py`; el tono y reglas conversacionales del modelo están en `app/agent/prompts/system.py`.
+- **Nombre:** Lumi — asistente inteligente de fidelización (Techapoli).
+- **Promesa:** «Lumi hace simple la fidelización» · «Lumi ilumina la relación con los clientes».
+- **Narrativa:** el nombre evoca claridad (nieve, *lumi* en finés) y guía (*lúmen*): datos claros, decisiones con apoyo de IA, conversación simple.
+- **Código:** textos fijos y variables de identidad en [`app/core/branding.py`](./app/core/branding.py); tono, personalidad y reglas del modelo en [`app/agent/prompts/system.py`](./app/agent/prompts/system.py).
+
+**UI / copy:** «Pregúntale a Lumi», «Lumi te ayuda», «Asistente Lumi». **Auditoría / sistema:** «Lumi creó el cliente», «Lumi asignó los puntos», etc., cuando personifiques acciones en logs o pantallas.
 
 ## Roadmap
 

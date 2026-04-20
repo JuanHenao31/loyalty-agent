@@ -1,4 +1,4 @@
-"""Techapoli Loyalty Agent — FastAPI entry point."""
+"""Lumi — capa conversacional Techapoli Loyalty (FastAPI)."""
 
 from __future__ import annotations
 

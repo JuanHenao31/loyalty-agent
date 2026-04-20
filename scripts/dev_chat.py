@@ -37,7 +37,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 def _parse_args():
-    p = argparse.ArgumentParser(description="Dev chat para Apoli (Techapoli Loyalty)")
+    p = argparse.ArgumentParser(description="Dev chat para Lumi (Techapoli Loyalty)")
     p.add_argument(
         "--company-id",
         default=os.getenv("DEV_COMPANY_ID", str(uuid.uuid4())),
@@ -87,7 +87,7 @@ async def main():
     session_id = uuid.uuid4()
 
     print(f"\n{'='*60}")
-    print("  Apoli — Dev Chat (Techapoli Loyalty)")
+    print("  Lumi — Dev Chat (Techapoli Loyalty)")
     print(f"{'='*60}")
     print(f"  Loyalty URL : {settings.loyalty_api_base_url}")
     print(f"  Modelo      : {settings.openai_model}")

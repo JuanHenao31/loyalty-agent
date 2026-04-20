@@ -1,7 +1,7 @@
 [project]
 name = "loyalty-agent"
 version = "0.1.0"
-description = "Techapoli Loyalty Agent — conversational layer over the loyalty microservice"
+description = "Lumi — asistente inteligente de fidelización Techapoli (capa conversacional sobre el API loyalty)"
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]

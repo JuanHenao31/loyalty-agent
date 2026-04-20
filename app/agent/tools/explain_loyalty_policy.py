@@ -23,6 +23,6 @@ async def explain_loyalty_policy(
         "expiracion": "Los puntos expiran después del número de meses configurado por la empresa (`points_expiration_months`). Cada vez que se suman puntos, la fecha de expiración se reinicia hacia adelante.",
         "redencion": "Para redimir, el cliente debe tener una tarjeta activa y suficientes puntos para cubrir `points_required` de la recompensa. La operación es atómica: si falla, no se deduce nada.",
         "tarjeta": "Cada cliente puede tener solo una tarjeta activa a la vez. Las tarjetas pasan por estados: pending → sent → active → (revoked | expired).",
-        "general": "El agente opera sobre el microservicio loyalty de Techapoli: clientes, tarjetas, puntos, recompensas, redenciones. Toda acción sensible requiere confirmación humana explícita.",
+        "general": "Lumi opera sobre el microservicio loyalty de Techapoli: clientes, tarjetas, puntos, recompensas, redenciones. Toda acción sensible requiere confirmación humana explícita.",
     }
     return answers.get(topic, answers["general"])

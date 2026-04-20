@@ -1,8 +1,10 @@
 # PMV — Microservicio de Agente IA para Techapoli Loyalty
 
+**Asistente de producto:** **Lumi** — asistente inteligente de fidelización. Lumi es la voz y la persona del sistema en canales conversacionales (Telegram, WhatsApp y, más adelante, web). Promesa de marca: *Lumi hace simple la fidelización*; narrativa: claridad (nieve / *lumi*) y guía (luz / *lúmen*).
+
 ## 1. Visión del producto
 
-**Techapoli Loyalty Agent** será un microservicio en **Python** encargado de actuar como un **usuario inteligente del sistema de loyalty**, orientado exclusivamente a **usuarios internos del negocio**. Su propósito es reducir la necesidad de que el humano entre al frontend para tareas operativas y consultas del programa de fidelización.
+**Techapoli Loyalty Agent** (motor del asistente **Lumi**) será un microservicio en **Python** encargado de actuar como un **usuario inteligente del sistema de loyalty**, orientado exclusivamente a **usuarios internos del negocio**. Su propósito es reducir la necesidad de que el humano entre al frontend para tareas operativas y consultas del programa de fidelización.
 
 El agente podrá:
 

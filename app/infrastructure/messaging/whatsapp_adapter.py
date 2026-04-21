@@ -5,6 +5,7 @@ import logging
 import httpx
 
 from app.core.config import settings
+from app.core.logging import preview_for_log
 from app.domain.ports.outbound_channel import OutboundChannelPort
 
 logger = logging.getLogger(__name__)
@@ -40,4 +41,11 @@ class WhatsAppOutboundAdapter(OutboundChannelPort):
         if resp.status_code >= 400:
             logger.error(
                 "whatsapp sendMessage failed: %s %s", resp.status_code, resp.text
+            )
+        else:
+            logger.info(
+                "whatsapp message ok to=%s chars=%d preview=%r",
+                to,
+                len(text),
+                preview_for_log(text, 80),
             )

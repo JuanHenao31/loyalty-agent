@@ -12,6 +12,7 @@ from fastapi.responses import PlainTextResponse
 
 from app.application.dto.inbound import InboundMessageCommand
 from app.core.config import settings
+from app.core.logging import preview_for_log
 from app.entrypoints.webhooks._dispatch import run_agent_turn
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,13 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks) 
                     received_at=datetime.now(timezone.utc),
                     sender_display_name=display,
                     raw_payload=payload,
+                )
+                logger.info(
+                    "whatsapp webhook accepted wa_id=%s msg_id=%s text_len=%d preview=%r",
+                    wa_id,
+                    msg.get("id", ""),
+                    len(text),
+                    preview_for_log(text, 80),
                 )
                 background_tasks.add_task(run_agent_turn, request, cmd)
     return {"ok": True}

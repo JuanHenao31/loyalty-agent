@@ -15,6 +15,7 @@ from app.application.dto.inbound import InboundMessageCommand
 from app.application.use_cases.process_inbound_message import ProcessInboundMessage
 from app.core.branding import USER_PROCESSING_ERROR
 from app.core.database import AsyncSessionLocal
+from app.core.logging import preview_for_log
 from app.infrastructure.loyalty_api.http_client import HttpLoyaltyServiceAdapter
 from app.infrastructure.messaging.telegram_adapter import TelegramOutboundAdapter
 from app.infrastructure.messaging.whatsapp_adapter import WhatsAppOutboundAdapter
@@ -35,6 +36,13 @@ async def run_agent_turn(request: Request, cmd: InboundMessageCommand) -> None:
     runtime = request.app.state.agent_runtime
     auth = request.app.state.loyalty_auth
     outbound = _outbound_for(cmd.channel)
+    logger.info(
+        "agent_turn start channel=%s user=%s text_len=%d preview=%r",
+        cmd.channel,
+        cmd.channel_user_id,
+        len(cmd.text),
+        preview_for_log(cmd.text, 80),
+    )
     try:
         async with AsyncSessionLocal() as session:
             try:
@@ -48,6 +56,11 @@ async def run_agent_turn(request: Request, cmd: InboundMessageCommand) -> None:
                 )
                 await uc.handle(cmd)
                 await session.commit()
+                logger.info(
+                    "agent_turn committed channel=%s user=%s",
+                    cmd.channel,
+                    cmd.channel_user_id,
+                )
             except Exception:
                 await session.rollback()
                 raise

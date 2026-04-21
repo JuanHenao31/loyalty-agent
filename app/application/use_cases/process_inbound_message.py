@@ -35,6 +35,7 @@ from app.application.dto.inbound import InboundMessageCommand
 from app.application.policies.guardrails import looks_off_topic
 from app.core.branding import GUARDRAIL_OFF_TOPIC_MESSAGE, ONBOARDING_MESSAGE
 from app.core.config import settings
+from app.core.logging import preview_for_log
 from app.core.security import decrypt_token
 from app.domain.ports.loyalty_service import LoyaltyServicePort
 from app.domain.ports.outbound_channel import OutboundChannelPort
@@ -59,12 +60,30 @@ class ProcessInboundMessage:
     outbound: OutboundChannelPort
 
     async def handle(self, cmd: InboundMessageCommand) -> None:
+        logger.info(
+            "inbound handle start channel=%s user=%s text_len=%d preview=%r",
+            cmd.channel,
+            cmd.channel_user_id,
+            len(cmd.text),
+            preview_for_log(cmd.text, 80),
+        )
         binding = await self._find_binding(cmd.channel, cmd.channel_user_id)
         if not binding:
+            logger.info(
+                "inbound no binding channel=%s user=%s -> onboarding message",
+                cmd.channel,
+                cmd.channel_user_id,
+            )
             await self.outbound.send_text(cmd.channel_user_id, ONBOARDING_MESSAGE)
             return
 
         agent_session = await self._get_or_create_session(binding, cmd)
+        logger.info(
+            "inbound session_id=%s company_id=%s internal_user_id=%s",
+            agent_session.id,
+            binding.company_id,
+            binding.internal_user_id,
+        )
         inbound_msg = AgentMessage(
             session_id=agent_session.id,
             role="user",
@@ -84,6 +103,10 @@ class ProcessInboundMessage:
         )
 
         if looks_off_topic(cmd.text):
+            logger.info(
+                "inbound off_topic guardrail session_id=%s -> skip LLM",
+                agent_session.id,
+            )
             await audit.record_guardrail(
                 session_id=agent_session.id,
                 event_type="off_topic",
@@ -93,7 +116,9 @@ class ProcessInboundMessage:
             await self._reply_and_touch_session(agent_session, cmd, GUARDRAIL_OFF_TOPIC_MESSAGE)
             return
 
+        logger.info("inbound resolving user token internal_user_id=%s", binding.internal_user_id)
         user_token = await self._resolve_user_token(binding)
+        logger.info("inbound user token ok (len=%d)", len(user_token))
 
         turn_ctx = AgentTurnContext(
             company_id=binding.company_id,
@@ -124,9 +149,19 @@ class ProcessInboundMessage:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": cmd.text},
         ]
+        logger.info(
+            "inbound invoking graph thread_id=%s recursion_limit=%s",
+            config["configurable"]["thread_id"],
+            config.get("recursion_limit"),
+        )
         try:
             result = await self.runtime.graph.ainvoke({"messages": messages}, config)
         except GuardrailViolation as exc:
+            logger.warning(
+                "inbound graph stopped tool_rbac_denied session_id=%s metadata=%s",
+                agent_session.id,
+                exc.audit_metadata,
+            )
             await audit.record_guardrail(
                 session_id=agent_session.id,
                 event_type="tool_rbac_denied",
@@ -136,7 +171,18 @@ class ProcessInboundMessage:
             await self._reply_and_touch_session(agent_session, cmd, exc.user_message)
             return
 
+        raw_msgs = result.get("messages", [])
+        logger.info(
+            "inbound graph done session_id=%s state_messages=%d",
+            agent_session.id,
+            len(raw_msgs) if isinstance(raw_msgs, list) else -1,
+        )
         reply_text = self._extract_final_text(result)
+        logger.info(
+            "inbound assistant_reply chars=%d preview=%r",
+            len(reply_text),
+            preview_for_log(reply_text, 120),
+        )
         await self._reply_and_touch_session(agent_session, cmd, reply_text)
 
     async def _reply_and_touch_session(
@@ -150,6 +196,11 @@ class ProcessInboundMessage:
             )
         )
         agent_session.last_activity_at = datetime.now(timezone.utc)
+        logger.info(
+            "inbound outbound send channel_user_id=%s chars=%d",
+            cmd.channel_user_id,
+            len(reply_text),
+        )
         await self.outbound.send_text(cmd.channel_user_id, reply_text)
 
     # --- helpers ---

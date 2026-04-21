@@ -9,6 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
 
 from app.application.dto.inbound import InboundMessageCommand
 from app.core.config import settings
+from app.core.logging import preview_for_log
 from app.entrypoints.webhooks._dispatch import run_agent_turn
 
 logger = logging.getLogger(__name__)
@@ -23,12 +24,13 @@ async def telegram_webhook(
 ) -> dict:
     if settings.telegram_webhook_secret:
         if x_telegram_bot_api_secret_token != settings.telegram_webhook_secret:
+            logger.warning("telegram webhook rejected: secret token mismatch")
             raise HTTPException(status_code=401, detail="invalid secret token")
 
     payload = await request.json()
     message = payload.get("message") or payload.get("edited_message")
     if not message or "text" not in message:
-        # Non-text update (stickers, media, etc.) — ignore for PMV.
+        logger.debug("telegram webhook ignored: non-text or empty update")
         return {"ok": True}
 
     chat_id = str(message["chat"]["id"])
@@ -44,6 +46,13 @@ async def telegram_webhook(
         received_at=datetime.now(timezone.utc),
         sender_display_name=display,
         raw_payload=payload,
+    )
+    logger.info(
+        "telegram webhook accepted chat_id=%s msg_id=%s text_len=%d preview=%r",
+        chat_id,
+        message_id,
+        len(text),
+        preview_for_log(text, 80),
     )
     background_tasks.add_task(run_agent_turn, request, cmd)
     return {"ok": True}

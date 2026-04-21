@@ -5,6 +5,7 @@ import logging
 import httpx
 
 from app.core.config import settings
+from app.core.logging import preview_for_log
 from app.domain.ports.outbound_channel import OutboundChannelPort
 
 logger = logging.getLogger(__name__)
@@ -25,3 +26,10 @@ class TelegramOutboundAdapter(OutboundChannelPort):
             resp = await client.post(url, json={"chat_id": to, "text": text})
         if resp.status_code >= 400:
             logger.error("telegram sendMessage failed: %s %s", resp.status_code, resp.text)
+        else:
+            logger.info(
+                "telegram sendMessage ok chat_id=%s chars=%d preview=%r",
+                to,
+                len(text),
+                preview_for_log(text, 80),
+            )
